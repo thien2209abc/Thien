@@ -1,4 +1,4 @@
-# 🦉 THIÊN DUOLINGO SUPER TOOL (v6.3.10)
+# 🦉 THIÊN TOOL 
 
 Chào mừng bạn đến với công cụ quản lý và tối ưu hóa trải nghiệm học tập trên Duolingo. Script này tích hợp đầy đủ các tính năng từ tự động hóa (Automation) đến can thiệp hệ thống để mở khóa các gói cao cấp.
 
