@@ -48,5 +48,5 @@ Chào mừng bạn đến với công cụ quản lý và tối ưu hóa trải 
 - Nên điều chỉnh "Tốc độ (ms)" phù hợp (trên 100ms) để tránh bị hệ thống quét.
 
 ---
-**Author:** Thiên (Lớp 12A3)
+**Author:** Thiên 
 **Github/Support:** Tampermonkey.net
