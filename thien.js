@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Thiên
 // @namespace    http://tampermonkey.net/
-// @version      6.3.10 (Silent Auto Get)
-// @description  Quản lý tài khoản Duolingo 
+// @version      6.3.11
+// @description  Quản lý tài khoản Duolingo
 // @author       Thiên
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=duolingo.com
 // @match        https://www.duolingo.com/*
@@ -23,7 +23,7 @@
 (function() {
     'use strict';
 
-    const SCRIPT_VERSION = '6.3.10 (Silent Auto Get)';
+    const SCRIPT_VERSION = '6.3.11 (No Auto Copy)';
 
     // --- CONFIG SUPER TOOL ---
     const d = new Date();
@@ -498,15 +498,18 @@ Please take a screenshot`;
                     linkList.push(detectedLink);
                     saveData();
                     render();
-                    if (typeof GM_setClipboard !== 'undefined') GM_setClipboard(detectedLink);
-                    navigator.clipboard.writeText(detectedLink);
+
+                    // --- [FIX] TẮT COPY ---
+                    // if (typeof GM_setClipboard !== 'undefined') GM_setClipboard(detectedLink);
+                    // navigator.clipboard.writeText(detectedLink);
+                    // ----------------------
 
                     // [UPDATE] Đánh dấu token này đã xong
                     if (currentToken) {
                         GM_setValue('thien_super_last_harvested_token', currentToken);
                     }
 
-                    showToast(`🎉 Đã lấy xong! Chờ acc tiếp theo...`, 4000, 'success');
+                    showToast(`🎉 Đã lấy xong! (Đã lưu vào list)`, 4000, 'success');
 
                     // Không reload trang, không tắt checkbox
                 }
@@ -1696,4 +1699,4 @@ Please take a screenshot`;
     }
 
     initialize();
-})();
+})(); 2
