@@ -4,8 +4,8 @@
 // @version      6.3.11
 // @description  Quản lý tài khoản Duolingo
 // @author       Thiên
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=duolingo.com
 // @match        https://www.duolingo.com/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=duolingo.com
 // @match        https://*.duolingo.com/*
 // @match        https://*.duolingo.cn/*
 // @grant        GM_setClipboard
@@ -23,7 +23,7 @@
 (function() {
     'use strict';
 
-    const SCRIPT_VERSION = '6.3.11 (No Auto Copy)';
+    const SCRIPT_VERSION = '6.3.11 (Auto Reg & Email Copy)';
 
     // --- CONFIG SUPER TOOL ---
     const d = new Date();
@@ -153,7 +153,7 @@ Please take a screenshot`;
             .thien-panel-close-btn:hover { background: rgba(0,0,0,0.1); color: var(--thien-red); }
 
             /* --- BUTTONS --- */
-            .thien-btn { border-radius: 12px !important; font-weight: 600 !important; border: none !important; transition: transform 0.2s var(--ease-elastic), filter 0.2s ease !important; color: #fff; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.1); padding: 10px 15px; margin: 10px; font-size: 14px; }
+            .thien-btn { border-radius: 12px !important; font-weight: 600 !important; border: none !important; transition: transform 0.2s var(--ease-elastic), filter 0.2s ease, background-color 0.3s ease !important; color: #fff; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.1); padding: 10px 15px; margin: 10px; font-size: 14px; }
             .thien-btn:hover { transform: translateY(-2px); filter: brightness(1.1); }
             .thien-btn:active { transform: scale(0.95); }
             .thien-btn-primary { background: var(--thien-blue); }
@@ -297,6 +297,135 @@ Please take a screenshot`;
         } else { showToast('Không tìm thấy thông tin người dùng. Bạn đã đăng nhập chưa?', 3000, 'error');
         }
     }
+
+    // --- [NEW] TÍNH NĂNG COPY EMAIL ---
+    function copyEmail() {
+        const jwt = getCookie('jwt_token');
+        if (!jwt) {
+            showToast('Không tìm thấy token. Bạn đã đăng nhập chưa?', 3000, 'error');
+            return;
+        }
+        try {
+            const userIdObj = JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+            const userId = userIdObj?.sub;
+            if (!userId) return showToast('Token không hợp lệ!', 3000, 'error');
+
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: `https://www.duolingo.com/2017-06-30/users/${userId}?fields=email`,
+                headers: { 'authorization': `Bearer ${jwt}` },
+                onload: (res) => {
+                    if (res.status === 200) {
+                        try {
+                            const data = JSON.parse(res.responseText);
+                            if (data.email) {
+                                GM_setClipboard(data.email);
+                                showToast(`Đã copy Email: ${data.email}`, 3000, 'success');
+                            } else {
+                                showToast('Tài khoản chưa có email hoặc bị ẩn!', 3000, 'warning');
+                            }
+                        } catch (e) { showToast('Lỗi phân tích dữ liệu!', 3000, 'error'); }
+                    } else {
+                        showToast('Lỗi khi lấy thông tin email!', 3000, 'error');
+                    }
+                }
+            });
+        } catch (e) {
+            showToast('Lỗi hệ thống!', 3000, 'error');
+        }
+    }
+
+    // --- [NEW] TÍNH NĂNG AUTO ĐIỀN FORM ---
+    let autoRegInterval = null;
+    let isAutoRegRunning = false;
+
+    function fillReactInput(inputElement, value) {
+        if (!inputElement) return;
+        let lastValue = inputElement.value;
+        inputElement.value = value;
+        let event = new Event('input', { bubbles: true });
+        let tracker = inputElement._valueTracker;
+        if (tracker) tracker.setValue(lastValue);
+        inputElement.dispatchEvent(event);
+    }
+
+    function findInputByKeywords(keywords, type = null) {
+        const inputs = document.querySelectorAll('input');
+        for (let input of inputs) {
+            if (input.offsetParent === null || input.value !== "") continue;
+            const placeholder = (input.placeholder || "").toLowerCase();
+            const inputType = (input.type || "").toLowerCase();
+            if (type && inputType === type) return input;
+            for (let word of keywords) {
+                if (placeholder.includes(word.toLowerCase())) return input;
+            }
+        }
+        return null;
+    }
+
+    function clickRegButton(selector) {
+        const btn = document.querySelector(selector);
+        if (btn && !btn.disabled) {
+            btn.click();
+            return true;
+        }
+        return false;
+    }
+
+    function toggleAutoReg(btnElement) {
+        isAutoRegRunning = !isAutoRegRunning;
+        if (isAutoRegRunning) {
+            btnElement.innerText = "Tắt Auto Điền Form";
+            btnElement.classList.replace('thien-btn-primary', 'thien-btn-danger');
+            showToast("Đã BẬT Auto Điền Form", 2000, 'success');
+
+            autoRegInterval = setInterval(() => {
+                const CONFIG = {
+                    name: "AutoDuo Family",
+                    password: "Thien123@",
+                    getAge: () => Math.floor(Math.random() * 100) + 1,
+                    getEmail: () => `duo${Date.now()}@gmail.com`
+                };
+                const SELECTORS = { btnNext: '[data-test="continue-button"]', btnRegister: '[data-test="register-button"]' };
+
+                let ageInput = findInputByKeywords(["tuổi", "age"]);
+                if (ageInput) {
+                    fillReactInput(ageInput, CONFIG.getAge());
+                    setTimeout(() => clickRegButton(SELECTORS.btnNext), 100);
+                    return;
+                }
+                let nameInput = findInputByKeywords(["tên", "name"]);
+                if (nameInput && nameInput.type !== "email" && nameInput.type !== "password") {
+                    fillReactInput(nameInput, CONFIG.name);
+                    setTimeout(() => clickRegButton(SELECTORS.btnNext), 100);
+                    return;
+                }
+                let emailInput = findInputByKeywords(["email", "địa chỉ"], "email");
+                if (!emailInput) emailInput = findInputByKeywords(["email"]);
+                if (emailInput) {
+                    fillReactInput(emailInput, CONFIG.getEmail());
+                    setTimeout(() => clickRegButton(SELECTORS.btnNext), 150);
+                }
+                let passInput = findInputByKeywords([], "password");
+                if (passInput) {
+                    fillReactInput(passInput, CONFIG.password);
+                    setTimeout(() => {
+                        let clicked = clickRegButton(SELECTORS.btnRegister);
+                        if (!clicked) clickRegButton(SELECTORS.btnNext);
+                    }, 200);
+                }
+                if (!ageInput && !nameInput && !emailInput && !passInput) {
+                     clickRegButton(SELECTORS.btnNext);
+                }
+            }, 200);
+        } else {
+            btnElement.innerText = "Bật Auto Điền Form";
+            btnElement.classList.replace('thien-btn-danger', 'thien-btn-primary');
+            showToast("Đã TẮT Auto Điền Form", 2000, 'info');
+            clearInterval(autoRegInterval);
+        }
+    }
+    // ---------------------------------------------
 
     function autoLoginWithToken() {
         const tokenInput = prompt("Dán token vào đây để đăng nhập:");
@@ -473,56 +602,41 @@ Please take a screenshot`;
             if (linkList.length > 0) textarea.scrollTop = textarea.scrollHeight;
         }
 
-        // --- [NEW] LOGIC AUTO GET LINK WITH TOKEN CHECK ---
         let autoGetInterval = null;
 
         function runAutoGetLinkLogic() {
             if (!window.location.pathname.includes('/settings/super')) return;
 
-            // [LOGIC MỚI] KIỂM TRA TOKEN
             const currentToken = getCookie('jwt_token');
             const lastHarvestedToken = GM_getValue('thien_super_last_harvested_token', '');
 
-            // Nếu token hiện tại trùng với token đã lấy -> Dừng, không làm gì cả
             if (currentToken && currentToken === lastHarvestedToken) {
                 return;
             }
 
-            // 1. Tìm Link Input
             const linkInput = document.querySelector('input[readonly][value^="http"]');
 
             if (linkInput && linkInput.value) {
                 const detectedLink = linkInput.value.trim();
-                // Nếu link chưa có trong list thì mới thêm
                 if (!linkList.includes(detectedLink)) {
                     linkList.push(detectedLink);
                     saveData();
                     render();
 
-                    // --- [FIX] TẮT COPY ---
-                    // if (typeof GM_setClipboard !== 'undefined') GM_setClipboard(detectedLink);
-                    // navigator.clipboard.writeText(detectedLink);
-                    // ----------------------
-
-                    // [UPDATE] Đánh dấu token này đã xong
                     if (currentToken) {
                         GM_setValue('thien_super_last_harvested_token', currentToken);
                     }
 
                     showToast(`🎉 Đã lấy xong! (Đã lưu vào list)`, 4000, 'success');
-
-                    // Không reload trang, không tắt checkbox
                 }
                 return;
             }
 
-            // 2. Tìm nút Add Member
             const btnAdd = document.querySelector('[data-test="add-family-member"]');
             if (btnAdd) {
                 btnAdd.click();
             }
 
-            // 3. Tìm nút Copy (trường hợp hiếm)
             const btnCopyDuo = document.querySelector('button[type="submit"]');
             if (btnCopyDuo && btnCopyDuo.innerText.toUpperCase().includes("CHÉP")) {
                 btnCopyDuo.click();
@@ -533,8 +647,7 @@ Please take a screenshot`;
             GM_setValue('thien_super_auto_get_enabled', enable);
             if (enable) {
                 if (!autoGetInterval) {
-                    autoGetInterval = setInterval(runAutoGetLinkLogic, 1500); // Check mỗi 1.5s
-                    // Đã tắt thông báo "Đã bật..."
+                    autoGetInterval = setInterval(runAutoGetLinkLogic, 1500);
                 }
             } else {
                 if (autoGetInterval) {
@@ -545,7 +658,6 @@ Please take a screenshot`;
             }
         }
 
-        // TỰ ĐỘNG BẬT KHI Ở TRANG SETTINGS/SUPER
         if (window.location.pathname.includes('/settings/super')) {
             if (autoGetCheckbox) autoGetCheckbox.checked = true;
             toggleAutoGet(true);
@@ -562,7 +674,6 @@ Please take a screenshot`;
                 toggleAutoGet(e.target.checked);
             });
         }
-        // --- END AUTO GET ---
 
         render();
         if (btnPaste) btnPaste.onclick = async () => {
@@ -1018,7 +1129,6 @@ Please take a screenshot`;
         if (!activeFarms.has(farmId)) return;
         activeFarms.set(farmId, false);
         activeFarms.delete(farmId);
-        // Reset button state
         const btnMap = {
             'xp': 'duovip-start-xp-farm',
             'gem': 'duovip-start-gem-farm',
@@ -1482,6 +1592,9 @@ Please take a screenshot`;
         return panel;
     }
 
+    // =========================================================================
+    // SECTION: MỚI - LOGIN PANEL ĐÃ ĐƯỢC CHỈNH SỬA
+    // =========================================================================
     function createLoginPanel() {
         const { showPanel, hidePanel, content } = createPanel('thien-login-panel', 'Login', 'thien-login-panel-close');
         if (!content) return { showPanel: () => {} };
@@ -1491,6 +1604,15 @@ Please take a screenshot`;
             addButton('Auto Login với Token', autoLoginWithToken, content, 'thien-btn-primary');
             addButton('Copy Token Hiện Tại', copyToken, content, 'thien-btn-primary');
             addButton('Sao chép Username', copyUsername, content, 'thien-btn-primary');
+
+            // --- NÚT MỚI: COPY EMAIL ---
+            addButton('Copy Email', copyEmail, content, 'thien-btn-secondary');
+
+            // --- NÚT MỚI: AUTO ĐIỀN FORM ---
+            const autoRegBtnClass = isAutoRegRunning ? 'thien-btn-danger' : 'thien-btn-primary';
+            const autoRegBtnText = isAutoRegRunning ? 'Tắt Auto Điền Form' : 'Bật Auto Điền Form';
+            addButton(autoRegBtnText, function() { toggleAutoReg(this); }, content, autoRegBtnClass);
+
             addButton('Tự động lưu Token', () => autoSaveCurrentToken(false), content, 'thien-btn-warning');
         }
         return { showPanel };
@@ -1699,4 +1821,4 @@ Please take a screenshot`;
     }
 
     initialize();
-})(); 2
+})();
