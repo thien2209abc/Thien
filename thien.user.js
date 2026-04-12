@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Thiên
 // @namespace    http://tampermonkey.net/
-// @version      6.3.11
-// @description  Quản lý tài khoản Duolingo
+// @version      6.4.0
+// @description  Quản lý tài khoản Duolingo (Multi-Thread & Anti-Sleep)
 // @author       Thiên
 // @match        https://www.duolingo.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=duolingo.com
@@ -23,7 +23,7 @@
 (function() {
     'use strict';
 
-    const SCRIPT_VERSION = '6.3.11 (Auto Reg & Email Copy)';
+    const SCRIPT_VERSION = '6.4.0 (Multi-Thread & Anti-Sleep)';
 
     // --- CONFIG SUPER TOOL ---
     const d = new Date();
@@ -34,6 +34,23 @@
     const SUPER_BODY_CONTENT = `if you are banned from participating, you can use the AutoDuo tool to experience Max for free.
 Please take a screenshot`;
 
+    // =========================================================================
+    // SECTION: TƯƠNG TÁC ẨN CHỐNG WEB NGỦ (ANTI-SLEEP)
+    // =========================================================================
+    function initAntiSleep() {
+        setInterval(() => {
+            try {
+                const event = new MouseEvent('mousemove', {
+                    view: window, bubbles: true, cancelable: true,
+                    clientX: Math.random() * window.innerWidth,
+                    clientY: Math.random() * window.innerHeight
+                });
+                document.dispatchEvent(event);
+                window.scrollBy(0, 1);
+                window.scrollBy(0, -1);
+            } catch (e) {}
+        }, 25000); 
+    }
 
     // =========================================================================
     // SECTION: CAN THIỆP NETWORK (SUPER/MAX)
@@ -298,7 +315,7 @@ Please take a screenshot`;
         }
     }
 
-    // --- [NEW] TÍNH NĂNG COPY EMAIL ---
+    // --- TÍNH NĂNG COPY EMAIL ---
     function copyEmail() {
         const jwt = getCookie('jwt_token');
         if (!jwt) {
@@ -335,7 +352,7 @@ Please take a screenshot`;
         }
     }
 
-    // --- [NEW] TÍNH NĂNG AUTO ĐIỀN FORM ---
+    // --- TÍNH NĂNG AUTO ĐIỀN FORM ---
     let autoRegInterval = null;
     let isAutoRegRunning = false;
 
@@ -492,7 +509,7 @@ Please take a screenshot`;
     }
 
     // =========================================================================
-    // SECTION: SUPER MAKER INTEGRATION (AUTO ON IN SETTINGS/SUPER)
+    // SECTION: SUPER MAKER INTEGRATION 
     // =========================================================================
     function createPersistentSuperPanel() {
         if (document.getElementById('thien-super-panel')) return document.getElementById('thien-super-panel');
@@ -1000,9 +1017,19 @@ Please take a screenshot`;
                 </div>
 
                  <div class="duovip-card">
-                    <span class="duovip-label">Tốc độ (ms)</span>
-                    <div class="duovip-farm-row">
-                        <input type="number" min="100" placeholder="ms" id="duovip-loop-delay-input" class="thien-input" title="Độ trễ mỗi lần chạy">
+                    <div style="display:flex; justify-content:space-between; gap:10px;">
+                        <div style="flex:1;">
+                            <span class="duovip-label">Tốc độ (ms)</span>
+                            <div class="duovip-farm-row">
+                                <input type="number" min="100" placeholder="ms" id="duovip-loop-delay-input" class="thien-input" title="Độ trễ mỗi lần chạy">
+                            </div>
+                        </div>
+                        <div style="flex:1;">
+                            <span class="duovip-label">Số luồng (1-10)</span>
+                            <div class="duovip-farm-row">
+                                <input type="number" min="1" max="10" placeholder="Luồng" id="duovip-threads-input" class="thien-input" title="Số luồng chạy song song">
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -1146,70 +1173,101 @@ Please take a screenshot`;
         else updateMasterStatus();
     }
 
-    async function farmXp(jwt, fromLang, toLang, count, loopDelay) {
+    // --- CẬP NHẬT: MULTI-THREAD XP ---
+    async function farmXp(jwt, fromLang, toLang, count, loopDelay, threads) {
         const farmId = 'xp';
         if (activeFarms.has(farmId)) return;
         activeFarms.set(farmId, true);
         const startBtn = document.getElementById('duovip-start-xp-farm');
-        if (startBtn) { startBtn.disabled = true; startBtn.style.opacity = 0.5;
-        }
-        addFarmUI(farmId, "Bắt đầu farm XP...");
+        if (startBtn) { startBtn.disabled = true; startBtn.style.opacity = 0.5; }
+        
+        addFarmUI(farmId, `Bắt đầu farm XP (${threads} luồng)...`);
         let totalXp = 0, i = 0;
         const isInfinite = count === 0;
 
         while (isInfinite || i < count) {
             if (!activeFarms.get(farmId)) break;
-            const now_ts = Math.floor(Date.now() / 1000);
-            const payload = { "awardXp": true, "completedBonusChallenge": true, "fromLanguage": fromLang, "learningLanguage": toLang, "hasXpBoost": false, "illustrationFormat": "svg", "isFeaturedStoryInPracticeHub": true, "isLegendaryMode": true, "isV2Redo": false, "isV2Story": false, "masterVersion": true, "maxScore": 0, "score": 0, "happyHourBonusXp": 469, "startTime": now_ts, "endTime": now_ts };
-            const response = await new Promise(resolve => {
-                GM_xmlhttpRequest({
-                    method: "POST", url: "https://stories.duolingo.com/api2/stories/fr-en-le-passeport/complete", headers: getDuoHeaders(jwt), data: JSON.stringify(payload),
-                    onload: res => resolve(res), onerror: () => resolve(null)
-                });
+            
+            const batchSize = isInfinite ? threads : Math.min(threads, count - i);
+            const promises = [];
+
+            for (let t = 0; t < batchSize; t++) {
+                const now_ts = Math.floor(Date.now() / 1000);
+                const payload = { "awardXp": true, "completedBonusChallenge": true, "fromLanguage": fromLang, "learningLanguage": toLang, "hasXpBoost": false, "illustrationFormat": "svg", "isFeaturedStoryInPracticeHub": true, "isLegendaryMode": true, "isV2Redo": false, "isV2Story": false, "masterVersion": true, "maxScore": 0, "score": 0, "happyHourBonusXp": 469, "startTime": now_ts, "endTime": now_ts };
+                
+                promises.push(new Promise(resolve => {
+                    GM_xmlhttpRequest({
+                        method: "POST", url: "https://stories.duolingo.com/api2/stories/fr-en-le-passeport/complete", headers: getDuoHeaders(jwt), data: JSON.stringify(payload),
+                        onload: res => resolve(res), onerror: () => resolve(null)
+                    });
+                }));
+            }
+
+            const results = await Promise.all(promises);
+            let batchXp = 0;
+
+            results.forEach(response => {
+                if (response && response.status === 200) {
+                    batchXp += JSON.parse(response.responseText).awardedXp || 0;
+                }
             });
 
-            if (response && response.status === 200) {
-                totalXp += JSON.parse(response.responseText).awardedXp || 0;
-                const statusCount = isInfinite ? `Lần ${i + 1}` : `${i + 1}/${count}`;
-                updateFarmStatus(farmId, `XP ${statusCount} | Tổng: ${totalXp}`);
-            } else { updateFarmStatus(farmId, `Lỗi ở lần ${i + 1}.`); break;
-            }
+            totalXp += batchXp;
+            i += batchSize;
+
+            const statusCount = isInfinite ? `Lần ${i}` : `${i}/${count}`;
+            updateFarmStatus(farmId, `XP ${statusCount} | Tổng: ${totalXp} (+${batchXp} XP)`);
+            
             await new Promise(r => setTimeout(r, loopDelay));
-            i++;
         }
         stopFarm(farmId, false);
-        finalizeFarmUI(farmId, "✔ Đã Hoàn Thành");
+        finalizeFarmUI(farmId, "✔ Đã Hoàn Thành XP");
     }
 
-    async function farmGems(jwt, uid, fromLang, toLang, count, loopDelay) {
+    // --- CẬP NHẬT: MULTI-THREAD GEMS ---
+    async function farmGems(jwt, uid, fromLang, toLang, count, loopDelay, threads) {
         const farmId = 'gem';
         if (activeFarms.has(farmId)) return;
         activeFarms.set(farmId, true);
         const startBtn = document.getElementById('duovip-start-gem-farm');
-        if (startBtn) { startBtn.disabled = true; startBtn.style.opacity = 0.5;
-        }
-        addFarmUI(farmId, "Bắt đầu farm Gems...");
+        if (startBtn) { startBtn.disabled = true; startBtn.style.opacity = 0.5; }
+        
+        addFarmUI(farmId, `Bắt đầu farm Gems (${threads} luồng)...`);
         let totalGems = 0, i = 0;
         const isInfinite = count === 0;
 
         while (isInfinite || i < count) {
             if (!activeFarms.get(farmId)) break;
-            for (const reward of ["SKILL_COMPLETION_BALANCED-...-2-GEMS", "SKILL_COMPLETION_BALANCED-...-2-GEMS"]) {
-                await new Promise(resolve => {
-                    GM_xmlhttpRequest({
-                        method: 'PATCH', url: `https://www.duolingo.com/2017-06-30/users/${uid}/rewards/${reward}`, headers: getDuoHeaders(jwt), data: JSON.stringify({ "consumed": true, "fromLanguage": fromLang, "learningLanguage": toLang }),
-                        onload: () => resolve(), onerror: () => resolve()
-                    });
-                });
+            
+            const batchSize = isInfinite ? threads : Math.min(threads, count - i);
+            const promises = [];
+
+            for (let t = 0; t < batchSize; t++) {
+                promises.push(new Promise(async resolve => {
+                    for (const reward of ["SKILL_COMPLETION_BALANCED-...-2-GEMS", "SKILL_COMPLETION_BALANCED-...-2-GEMS"]) {
+                        await new Promise(r => {
+                            GM_xmlhttpRequest({
+                                method: 'PATCH', url: `https://www.duolingo.com/2017-06-30/users/${uid}/rewards/${reward}`, headers: getDuoHeaders(jwt), data: JSON.stringify({ "consumed": true, "fromLanguage": fromLang, "learningLanguage": toLang }),
+                                onload: () => r(), onerror: () => r()
+                            });
+                        });
+                    }
+                    resolve(60); 
+                }));
             }
-            totalGems += 60;
-            const statusCount = isInfinite ? `Lần ${i + 1}` : `${i + 1}/${count}`;
+
+            const results = await Promise.all(promises);
+            const batchGems = results.reduce((a, b) => a + b, 0);
+            totalGems += batchGems;
+            i += batchSize;
+
+            const statusCount = isInfinite ? `Lần ${i}` : `${i}/${count}`;
             updateFarmStatus(farmId, `Gems ${statusCount} | Tổng: ~${totalGems}`);
+            
             await new Promise(r => setTimeout(r, loopDelay));
-            i++;
         }
         stopFarm(farmId, false);
-        finalizeFarmUI(farmId, "✔ Đã Hoàn Thành");
+        finalizeFarmUI(farmId, "✔ Đã Hoàn Thành Gems");
     }
 
     async function farmStreak(jwt, uid, fromLang, toLang, days, loopDelay) {
@@ -1480,6 +1538,7 @@ Please take a screenshot`;
 
         // Inputs & Controls
         const loopDelayInput = duovipPanel.querySelector('#duovip-loop-delay-input');
+        const threadsInput = duovipPanel.querySelector('#duovip-threads-input');
         const startXpBtn = duovipPanel.querySelector('#duovip-start-xp-farm');
         const startGemBtn = duovipPanel.querySelector('#duovip-start-gem-farm');
         const startStreakBtn = duovipPanel.querySelector('#duovip-start-streak-farm');
@@ -1507,7 +1566,7 @@ Please take a screenshot`;
         if(freezeBtn) freezeBtn.addEventListener('click', () => grantShopItem('streak_freeze', 'Streak Freeze'));
         if(heartsBtn) heartsBtn.addEventListener('click', () => grantShopItem('health_refill', 'Heart Refill'));
 
-        // Delay Input Logic
+        // Delay & Threads Input Logic
         if(loopDelayInput) {
             loopDelayInput.value = GM_getValue('thien_duovip_loop_delay', 200);
             loopDelayInput.addEventListener('change', () => {
@@ -1517,6 +1576,16 @@ Please take a screenshot`;
                 GM_setValue('thien_duovip_loop_delay', newValue);
             });
         }
+        if(threadsInput) {
+            threadsInput.value = GM_getValue('thien_duovip_threads', 3);
+            threadsInput.addEventListener('change', () => {
+                let newValue = parseInt(threadsInput.value, 10);
+                if (isNaN(newValue) || newValue < 1) newValue = 1;
+                if (newValue > 10) newValue = 10; // Giới hạn max 10 luồng
+                threadsInput.value = newValue;
+                GM_setValue('thien_duovip_threads', newValue);
+            });
+        }
 
         // Main Farming Logic
         async function handleFarmAction(action) {
@@ -1524,6 +1593,7 @@ Please take a screenshot`;
             if (!jwt || !parseJwt(jwt)?.sub) return showToast('Lỗi: Không tìm thấy thông tin đăng nhập.', 4000, 'error');
             const userId = parseJwt(jwt).sub;
             const loopDelay = parseInt(GM_getValue('thien_duovip_loop_delay', 200), 10);
+            const threads = parseInt(GM_getValue('thien_duovip_threads', 3), 10);
 
             showToast('Đang lấy dữ liệu...', 1000, 'info');
             const userData = await getUserData(jwt, userId).catch(() => null);
@@ -1539,13 +1609,13 @@ Please take a screenshot`;
             switch(action) {
                 case 'xp': {
                     const count = getCount('duovip-xp-loops-input');
-                    if (count !== null) farmXp(jwt, userData.fromLanguage, 'fr', count, loopDelay);
+                    if (count !== null) farmXp(jwt, userData.fromLanguage, 'fr', count, loopDelay, threads);
                     else showToast('Vui lòng nhập số lần hợp lệ.', 3000, 'error');
                     break;
                 }
                 case 'gem': {
                     const count = getCount('duovip-gem-loops-input');
-                    if (count !== null) farmGems(jwt, userId, userData.fromLanguage, userData.learningLanguage, count, loopDelay);
+                    if (count !== null) farmGems(jwt, userId, userData.fromLanguage, userData.learningLanguage, count, loopDelay, threads);
                     else showToast('Vui lòng nhập số lần hợp lệ.', 3000, 'error');
                     break;
                 }
@@ -1556,14 +1626,12 @@ Please take a screenshot`;
                     break;
                 }
                 case 'monthly-quests': {
-                    // Chạy badge các tháng cũ
                     runFullQuestCompletion(jwt, userId, userData.timezone);
                     break;
                 }
                 case 'daily-quests': {
-                    // Chạy 10 bài XP thường sẽ hoàn thành nhiệm vụ ngày
                     showToast('Đang tự động chạy 10 bài để làm nhiệm vụ ngày...', 2000, 'info');
-                    farmXp(jwt, userData.fromLanguage, 'fr', 10, loopDelay);
+                    farmXp(jwt, userData.fromLanguage, 'fr', 10, loopDelay, threads);
                     break;
                 }
             }
@@ -1743,6 +1811,9 @@ Please take a screenshot`;
         const subMode = GM_getValue('thien_subscription_mode', 'none');
         if (subMode !== 'none') injectSubscriptionInterceptor(subMode);
         injectStyles();
+        
+        // Kích hoạt Anti-Sleep
+        initAntiSleep();
 
         let uiBuilt = false;
         const buildUI = () => {
@@ -1762,7 +1833,6 @@ Please take a screenshot`;
             const { showPanel: showTxtEditor, hidePanel: hideTxtEditor } = createTxtEditorPanel();
             const { showPanel: showSettings } = createSettingsPanel(showTxtEditor);
 
-            // [UPDATE] TỰ ĐỘNG BẬT SUPER MAKER PANEL NẾU Ở TRANG SETTINGS/SUPER
             if (window.location.pathname.includes('/settings/super')) {
                 createPersistentSuperPanel();
                 setupSuperMakerLogic();
